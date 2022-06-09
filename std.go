@@ -11,6 +11,14 @@ func init() {
 	std = New("")
 }
 
+func SetName(name string) {
+	std.name = name
+}
+
+func SetOutput(out io.Writer) {
+	std.out = out
+}
+
 func SetLevelString(s string) {
 	std.setLevelString(s)
 }
