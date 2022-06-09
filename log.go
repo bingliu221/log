@@ -70,7 +70,7 @@ func New(name string, opts ...option) *Logger {
 		out:  os.Stderr,
 
 		bufPool: sync.Pool{
-			New: func() any {
+			New: func() interface{} {
 				buf := make([]byte, 0, 1024)
 				return &buf
 			},
