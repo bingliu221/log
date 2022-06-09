@@ -6,121 +6,113 @@ import (
 	"os"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
 
-var defaultLevel level
-var defaultOutputs []io.Writer = []io.Writer{os.Stderr}
-
-type Config func(*Logger)
+type option func(*Logger)
 
 // Level defines what logs should be print
-type level int
+type Level int
 
 // LogLevels
 const (
-	levelError level = -2 + iota
-	levelWarning
-	levelInfo
-	levelDebug
+	LevelError   Level = -2
+	LevelWarning Level = -1
+	LevelInfo    Level = 0 // default log level
+	LevelDebug   Level = 1
 )
 
-func (lv level) String() string {
-	switch lv {
-	case levelError:
-		return "[E]"
-	case levelWarning:
-		return "[W]"
-	case levelInfo:
-		return "[I]"
-	case levelDebug:
-		return "[D]"
-	}
-	return ""
+var levelString = map[Level]string{
+	LevelError:   "[E]",
+	LevelWarning: "[W]",
+	LevelInfo:    "[I]",
+	LevelDebug:   "[D]",
 }
 
-func setLevel(lv *level, s string) {
-	if lv == nil {
-		return
-	}
-	switch s {
-	case "debug":
-		*lv = levelDebug
-	case "info":
-		*lv = levelInfo
-	case "warning":
-		*lv = levelWarning
-	case "error":
-		*lv = levelError
+func (lv Level) String() string {
+	return levelString[lv]
+}
+
+func WithLevel(lv Level) option {
+	return func(l *Logger) {
+		if l == nil {
+			return
+		}
+		l.setLevel(lv)
 	}
 }
 
-func SetLevel(s string) {
-	setLevel(&std.lv, s)
-}
-
-func WithLevel(lv string) Config {
+func WithOutput(w io.Writer) option {
 	return func(logger *Logger) {
 		if logger == nil {
 			return
 		}
-		setLevel(&logger.lv, lv)
+		logger.out = w
 	}
-}
-
-func SetOutputs(ws ...io.Writer) Config {
-	return func(logger *Logger) {
-		if logger == nil {
-			return
-		}
-		logger.mu.Lock()
-		defer logger.mu.Unlock()
-		logger.outputs = ws
-	}
-}
-
-func SetDefaultOutput(ws ...io.Writer) {
-	defaultOutputs = ws
 }
 
 // Logger is a simple custom logger support log levels
 type Logger struct {
-	mu      sync.Mutex
-	lv      level
-	name    string
-	buf     []byte
-	outputs []io.Writer
+	mu   sync.Mutex
+	lv   Level
+	name string
+	out  io.Writer
+
+	bufPool sync.Pool
 }
 
 // New creates a new Logger
-func New(name string, configs ...Config) *Logger {
+func New(name string, opts ...option) *Logger {
 	logger := &Logger{
-		name:    name,
-		lv:      defaultLevel,
-		outputs: defaultOutputs,
+		name: name,
+		out:  os.Stderr,
+
+		bufPool: sync.Pool{
+			New: func() any {
+				buf := make([]byte, 0, 1024)
+				return &buf
+			},
+		},
 	}
-	for _, config := range configs {
-		config(logger)
+	for _, opt := range opts {
+		opt(logger)
 	}
 	return logger
 }
 
-func (l *Logger) formatHeader(buf *[]byte, t time.Time, file string, line int, lv level) {
-	year, month, day := t.Date()
-	hour, min, sec := t.Clock()
-	milliSec := t.Nanosecond() / 1e6
-	ts := fmt.Sprintf("%04d/%02d/%02d %02d:%02d:%02d.%03d", year, month, day, hour, min, sec, milliSec)
+func (l *Logger) setLevel(lv Level) {
+	l.lv = lv
+}
+
+func (l *Logger) setLevelString(s string) {
+	switch strings.ToLower(s) {
+	case "error", "e":
+		l.setLevel(LevelError)
+	case "warning", "w":
+		l.setLevel(LevelWarning)
+	case "info", "i":
+		l.setLevel(LevelInfo)
+	case "debug", "d":
+		l.setLevel(LevelDebug)
+	}
+}
+
+func (l *Logger) formatHeader(buf *[]byte, t time.Time, file string, line int, lv Level) {
+	ts := t.Format("2006/01/02 15:04:05.000 ")
 	*buf = append(*buf, ts...)
-	*buf = append(*buf, ' ')
+
 	ls := lv.String()
 	*buf = append(*buf, ls...)
+
 	if l.name != "" {
 		*buf = append(*buf, '[')
 		*buf = append(*buf, l.name...)
 		*buf = append(*buf, ']', ' ')
 	}
-	if l.lv == levelDebug {
+
+	if l.lv == LevelDebug {
 		*buf = append(*buf, file...)
 		*buf = append(*buf, ':')
 		nu := strconv.Itoa(line)
@@ -129,112 +121,70 @@ func (l *Logger) formatHeader(buf *[]byte, t time.Time, file string, line int, l
 	}
 }
 
-func (l *Logger) output(lv level, s string) error {
+func (l *Logger) output(lv Level, s string) {
 	now := time.Now()
 	if lv > l.lv {
-		return nil
+		return
 	}
+
 	var file string
 	var line int
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	if l.lv == levelDebug {
-		l.mu.Unlock()
+	if l.lv == LevelDebug {
 		var ok bool
 		_, file, line, ok = runtime.Caller(2)
 		if !ok {
 			file = "???"
 			line = 0
 		}
-		l.mu.Lock()
 	}
-	l.buf = l.buf[:0]
-	l.formatHeader(&l.buf, now, file, line, lv)
-	l.buf = append(l.buf, s...)
+
+	buf := l.bufPool.New().(*[]byte)
+	defer l.bufPool.Put(buf)
+
+	*buf = (*buf)[:0]
+	l.formatHeader(buf, now, file, line, lv)
+	*buf = append(*buf, s...)
 	if len(s) == 0 || s[len(s)-1] != '\n' {
-		l.buf = append(l.buf, '\n')
+		*buf = append(*buf, '\n')
 	}
-	for _, w := range l.outputs {
-		_, err := w.Write(l.buf)
-		if err != nil {
-			return err
-		}
+
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	_, err := l.out.Write(*buf)
+	if err != nil {
+		panic(err)
 	}
-	return nil
 }
 
 func (l *Logger) Error(v ...interface{}) {
-	l.output(levelError, fmt.Sprint(v...))
+	l.output(LevelError, fmt.Sprint(v...))
 }
 
 func (l *Logger) Errorf(format string, v ...interface{}) {
-	l.output(levelError, fmt.Sprintf(format, v...))
+	l.output(LevelError, fmt.Sprintf(format, v...))
 }
 
 func (l *Logger) Warn(v ...interface{}) {
-	l.output(levelWarning, fmt.Sprint(v...))
+	l.output(LevelWarning, fmt.Sprint(v...))
 }
 
 func (l *Logger) Warnf(format string, v ...interface{}) {
-	l.output(levelWarning, fmt.Sprintf(format, v...))
+	l.output(LevelWarning, fmt.Sprintf(format, v...))
 }
 
 func (l *Logger) Info(v ...interface{}) {
-	l.output(levelInfo, fmt.Sprint(v...))
+	l.output(LevelInfo, fmt.Sprint(v...))
 }
 
 func (l *Logger) Infof(format string, v ...interface{}) {
-	l.output(levelInfo, fmt.Sprintf(format, v...))
+	l.output(LevelInfo, fmt.Sprintf(format, v...))
 }
 
 func (l *Logger) Debug(v ...interface{}) {
-	l.output(levelDebug, fmt.Sprint(v...))
+	l.output(LevelDebug, fmt.Sprint(v...))
 }
 
 func (l *Logger) Debugf(format string, v ...interface{}) {
-	l.output(levelDebug, fmt.Sprintf(format, v...))
-}
-
-var std *Logger = New("")
-
-func Error(v ...interface{}) {
-	std.output(levelError, fmt.Sprint(v...))
-}
-
-func Errorf(format string, v ...interface{}) {
-	std.output(levelError, fmt.Sprintf(format, v...))
-}
-
-func Warn(v ...interface{}) {
-	std.output(levelWarning, fmt.Sprint(v...))
-}
-
-func Warnf(format string, v ...interface{}) {
-	std.output(levelWarning, fmt.Sprintf(format, v...))
-}
-
-func Info(v ...interface{}) {
-	std.output(levelInfo, fmt.Sprint(v...))
-}
-
-func Infof(format string, v ...interface{}) {
-	std.output(levelInfo, fmt.Sprintf(format, v...))
-}
-
-func Debug(v ...interface{}) {
-	std.output(levelDebug, fmt.Sprint(v...))
-}
-
-func Debugf(format string, v ...interface{}) {
-	std.output(levelDebug, fmt.Sprintf(format, v...))
-}
-
-func Fatal(v ...interface{}) {
-	std.output(levelError, fmt.Sprint(v...))
-	os.Exit(1)
-}
-
-func Fatalf(format string, v ...interface{}) {
-	std.output(levelError, fmt.Sprintf(format, v...))
-	os.Exit(1)
+	l.output(LevelDebug, fmt.Sprintf(format, v...))
 }
