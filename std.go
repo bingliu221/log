@@ -9,23 +9,45 @@ import (
 var std *Logger
 
 func init() {
-	std = New("")
+	std = &Logger{
+		out: &mutexWriter{
+			Writer: os.Stderr,
+		},
+	}
 }
 
-func SetName(name string) {
-	std.name = name
+func SetTag(tag string) {
+	std.tag = tag
 }
 
 func SetOutput(out io.Writer) {
-	std.out = out
+	std.out = &mutexWriter{
+		Writer: out,
+	}
 }
 
 func SetLevelString(s string) {
 	std.setLevelString(s)
 }
 
-func SetLevel(lv Level) {
-	std.setLevel(lv)
+func SetLevel(level Level) {
+	std.setLevel(level)
+}
+
+func WithTag(tag string) *Logger {
+	return std.WithTag(tag)
+}
+
+func WithLevel(level Level) *Logger {
+	return std.WithLevel(level)
+}
+
+func WithOutput(out io.Writer) *Logger {
+	return std.WithOutput(out)
+}
+
+func WithFileAndLine(included bool) *Logger {
+	return std.WithFileAndLine(included)
 }
 
 func Error(v ...interface{}) {

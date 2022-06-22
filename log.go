@@ -3,7 +3,6 @@ package log
 import (
 	"fmt"
 	"io"
-	"os"
 	"runtime"
 	"strconv"
 	"strings"
@@ -11,7 +10,28 @@ import (
 	"time"
 )
 
-type option func(*Logger)
+var bufPool sync.Pool
+
+func init() {
+	bufPool = sync.Pool{
+		New: func() interface{} {
+			buf := make([]byte, 0, 1024)
+			return &buf
+		},
+	}
+}
+
+type mutexWriter struct {
+	mu sync.Mutex
+	io.Writer
+}
+
+func (w *mutexWriter) Write(b []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	return w.Writer.Write(b)
+}
 
 // Level defines what logs should be print
 type Level int
@@ -31,59 +51,21 @@ var levelString = map[Level]string{
 	LevelDebug:   "[D]",
 }
 
-func (lv Level) String() string {
-	return levelString[lv]
-}
-
-func WithLevel(lv Level) option {
-	return func(l *Logger) {
-		if l == nil {
-			return
-		}
-		l.setLevel(lv)
-	}
-}
-
-func WithOutput(w io.Writer) option {
-	return func(logger *Logger) {
-		if logger == nil {
-			return
-		}
-		logger.out = w
-	}
+func (level Level) String() string {
+	return levelString[level]
 }
 
 // Logger is a simple custom logger support log levels
 type Logger struct {
-	mu   sync.Mutex
-	lv   Level
-	name string
-	out  io.Writer
+	out *mutexWriter
 
-	bufPool sync.Pool
+	level       Level
+	tag         string
+	fileAndLine bool
 }
 
-// New creates a new Logger
-func New(name string, opts ...option) *Logger {
-	logger := &Logger{
-		name: name,
-		out:  os.Stderr,
-
-		bufPool: sync.Pool{
-			New: func() interface{} {
-				buf := make([]byte, 0, 1024)
-				return &buf
-			},
-		},
-	}
-	for _, opt := range opts {
-		opt(logger)
-	}
-	return logger
-}
-
-func (l *Logger) setLevel(lv Level) {
-	l.lv = lv
+func (l *Logger) setLevel(level Level) {
+	l.level = level
 }
 
 func (l *Logger) setLevelString(s string) {
@@ -99,20 +81,27 @@ func (l *Logger) setLevelString(s string) {
 	}
 }
 
-func (l *Logger) formatHeader(buf *[]byte, t time.Time, file string, line int, lv Level) {
-	ts := t.Format("2006/01/02 15:04:05.000 ")
+func (l *Logger) formatHeader(buf *[]byte, level Level) {
+	ts := time.Now().Format("2006/01/02 15:04:05.000 ")
 	*buf = append(*buf, ts...)
 
-	ls := lv.String()
+	ls := level.String()
 	*buf = append(*buf, ls...)
 
-	if l.name != "" {
+	if l.tag != "" {
 		*buf = append(*buf, '[')
-		*buf = append(*buf, l.name...)
+		*buf = append(*buf, l.tag...)
 		*buf = append(*buf, ']', ' ')
 	}
 
-	if l.lv == LevelDebug {
+	if l.fileAndLine {
+		var ok bool
+		_, file, line, ok := runtime.Caller(3)
+		if !ok {
+			file = "???"
+			line = 0
+		}
+
 		*buf = append(*buf, file...)
 		*buf = append(*buf, ':')
 		nu := strconv.Itoa(line)
@@ -121,40 +110,60 @@ func (l *Logger) formatHeader(buf *[]byte, t time.Time, file string, line int, l
 	}
 }
 
-func (l *Logger) output(lv Level, s string) {
-	now := time.Now()
-	if lv > l.lv {
+func (l *Logger) output(level Level, s string) {
+	if level > l.level {
 		return
 	}
 
-	var file string
-	var line int
-	if l.lv == LevelDebug {
-		var ok bool
-		_, file, line, ok = runtime.Caller(2)
-		if !ok {
-			file = "???"
-			line = 0
-		}
-	}
-
-	buf := l.bufPool.New().(*[]byte)
-	defer l.bufPool.Put(buf)
+	buf := bufPool.New().(*[]byte)
+	defer bufPool.Put(buf)
 
 	*buf = (*buf)[:0]
-	l.formatHeader(buf, now, file, line, lv)
+	l.formatHeader(buf, level)
 	*buf = append(*buf, s...)
 	if len(s) == 0 || s[len(s)-1] != '\n' {
 		*buf = append(*buf, '\n')
 	}
 
-	l.mu.Lock()
-	defer l.mu.Unlock()
-
 	_, err := l.out.Write(*buf)
 	if err != nil {
 		panic(err)
 	}
+}
+
+func (l *Logger) clone() *Logger {
+	return &Logger{
+		out:         l.out,
+		tag:         l.tag,
+		level:       l.level,
+		fileAndLine: l.fileAndLine,
+	}
+}
+
+func (l *Logger) WithTag(tag string) *Logger {
+	clone := l.clone()
+	clone.tag = tag
+	return clone
+}
+
+func (l *Logger) WithLevel(level Level) *Logger {
+	clone := l.clone()
+	clone.level = level
+	return clone
+}
+
+func (l *Logger) WithOutput(out io.Writer) *Logger {
+	clone := l.clone()
+	clone.out = &mutexWriter{
+		Writer: out,
+	}
+	return clone
+}
+
+func (l *Logger) WithFileAndLine(included bool) *Logger {
+	clone := l.clone()
+	clone.fileAndLine = included
+	return clone
 }
 
 func (l *Logger) Error(v ...interface{}) {
