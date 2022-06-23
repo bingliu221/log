@@ -34,6 +34,10 @@ func SetLevel(level Level) {
 	std.setLevel(level)
 }
 
+func SetFileAndLine(included bool) {
+	std.fileAndLine = included
+}
+
 func WithTag(tag string) *Logger {
 	return std.WithTag(tag)
 }
