@@ -14,7 +14,7 @@ var bufPool sync.Pool
 
 func init() {
 	bufPool = sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			buf := make([]byte, 0, 1024)
 			return &buf
 		},
@@ -33,7 +33,7 @@ func (w *mutexWriter) Write(b []byte) (int, error) {
 	return w.Writer.Write(b)
 }
 
-// Level defines what logs should be print
+// Level defines what logs should be printed
 type Level int
 
 // LogLevels
@@ -62,6 +62,10 @@ type Logger struct {
 	level       Level
 	tag         string
 	fileAndLine bool
+}
+
+func (l *Logger) Level() Level {
+	return l.level
 }
 
 func (l *Logger) setLevel(level Level) {
@@ -166,34 +170,34 @@ func (l *Logger) WithFileAndLine(included bool) *Logger {
 	return clone
 }
 
-func (l *Logger) Error(v ...interface{}) {
+func (l *Logger) Error(v ...any) {
 	l.output(LevelError, fmt.Sprint(v...))
 }
 
-func (l *Logger) Errorf(format string, v ...interface{}) {
+func (l *Logger) Errorf(format string, v ...any) {
 	l.output(LevelError, fmt.Sprintf(format, v...))
 }
 
-func (l *Logger) Warn(v ...interface{}) {
+func (l *Logger) Warn(v ...any) {
 	l.output(LevelWarning, fmt.Sprint(v...))
 }
 
-func (l *Logger) Warnf(format string, v ...interface{}) {
+func (l *Logger) Warnf(format string, v ...any) {
 	l.output(LevelWarning, fmt.Sprintf(format, v...))
 }
 
-func (l *Logger) Info(v ...interface{}) {
+func (l *Logger) Info(v ...any) {
 	l.output(LevelInfo, fmt.Sprint(v...))
 }
 
-func (l *Logger) Infof(format string, v ...interface{}) {
+func (l *Logger) Infof(format string, v ...any) {
 	l.output(LevelInfo, fmt.Sprintf(format, v...))
 }
 
-func (l *Logger) Debug(v ...interface{}) {
+func (l *Logger) Debug(v ...any) {
 	l.output(LevelDebug, fmt.Sprint(v...))
 }
 
-func (l *Logger) Debugf(format string, v ...interface{}) {
+func (l *Logger) Debugf(format string, v ...any) {
 	l.output(LevelDebug, fmt.Sprintf(format, v...))
 }

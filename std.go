@@ -16,6 +16,10 @@ func init() {
 	}
 }
 
+func Default() *Logger {
+	return std
+}
+
 func SetTag(tag string) {
 	std.tag = tag
 }
@@ -54,44 +58,44 @@ func WithFileAndLine(included bool) *Logger {
 	return std.WithFileAndLine(included)
 }
 
-func Error(v ...interface{}) {
+func Error(v ...any) {
 	std.output(LevelError, fmt.Sprint(v...))
 }
 
-func Errorf(format string, v ...interface{}) {
+func Errorf(format string, v ...any) {
 	std.output(LevelError, fmt.Sprintf(format, v...))
 }
 
-func Warn(v ...interface{}) {
+func Warn(v ...any) {
 	std.output(LevelWarning, fmt.Sprint(v...))
 }
 
-func Warnf(format string, v ...interface{}) {
+func Warnf(format string, v ...any) {
 	std.output(LevelWarning, fmt.Sprintf(format, v...))
 }
 
-func Info(v ...interface{}) {
+func Info(v ...any) {
 	std.output(LevelInfo, fmt.Sprint(v...))
 }
 
-func Infof(format string, v ...interface{}) {
+func Infof(format string, v ...any) {
 	std.output(LevelInfo, fmt.Sprintf(format, v...))
 }
 
-func Debug(v ...interface{}) {
+func Debug(v ...any) {
 	std.output(LevelDebug, fmt.Sprint(v...))
 }
 
-func Debugf(format string, v ...interface{}) {
+func Debugf(format string, v ...any) {
 	std.output(LevelDebug, fmt.Sprintf(format, v...))
 }
 
-func Fatal(v ...interface{}) {
+func Fatal(v ...any) {
 	std.output(LevelError, fmt.Sprint(v...))
 	os.Exit(1)
 }
 
-func Fatalf(format string, v ...interface{}) {
+func Fatalf(format string, v ...any) {
 	std.output(LevelError, fmt.Sprintf(format, v...))
 	os.Exit(1)
 }
