@@ -95,7 +95,7 @@ func (l *Logger) formatHeader(buf *[]byte, level Level) {
 	*buf = append(*buf, ' ')
 
 	ls := level.String()
-	if ls == "" {
+	if ls != "" {
 		*buf = append(*buf, ls...)
 	}
 	if l.tag != "" {
