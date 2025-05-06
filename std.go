@@ -99,3 +99,15 @@ func Fatalf(format string, v ...any) {
 	std.output(LevelError, fmt.Sprintf(format, v...))
 	os.Exit(1)
 }
+
+func Print(v ...any) {
+	std.output(levelNone, fmt.Sprint(v...))
+}
+
+func Printf(format string, v ...any) {
+	std.output(levelNone, fmt.Sprintf(format, v...))
+}
+
+func Println(v ...any) {
+	std.output(levelNone, fmt.Sprintln(v...))
+}

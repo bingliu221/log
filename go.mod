@@ -1,3 +1,3 @@
 module github.com/bingliu221/log
 
-go 1.19
+go 1.24

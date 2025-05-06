@@ -42,6 +42,8 @@ const (
 	LevelWarning Level = -1
 	LevelInfo    Level = 0 // default log level
 	LevelDebug   Level = 1
+
+	levelNone Level = 1 << 31 // no log level
 )
 
 var levelString = map[Level]string{
@@ -49,6 +51,8 @@ var levelString = map[Level]string{
 	LevelWarning: "[W]",
 	LevelInfo:    "[I]",
 	LevelDebug:   "[D]",
+
+	levelNone: "",
 }
 
 func (level Level) String() string {
@@ -86,16 +90,20 @@ func (l *Logger) setLevelString(s string) {
 }
 
 func (l *Logger) formatHeader(buf *[]byte, level Level) {
-	ts := time.Now().Format("2006/01/02 15:04:05.000 ")
+	ts := time.Now().Format("2006/01/02 15:04:05.000")
 	*buf = append(*buf, ts...)
+	*buf = append(*buf, ' ')
 
 	ls := level.String()
-	*buf = append(*buf, ls...)
-
+	if ls == "" {
+		*buf = append(*buf, ls...)
+	}
 	if l.tag != "" {
-		*buf = append(*buf, '[')
 		*buf = append(*buf, l.tag...)
-		*buf = append(*buf, ']', ' ')
+	}
+
+	if len(ls)+len(l.tag) > 0 {
+		*buf = append(*buf, ' ')
 	}
 
 	if l.fileAndLine {
@@ -146,7 +154,7 @@ func (l *Logger) clone() *Logger {
 
 func (l *Logger) WithTag(tag string) *Logger {
 	clone := l.clone()
-	clone.tag = tag
+	clone.tag = "[" + tag + "]"
 	return clone
 }
 
@@ -200,4 +208,16 @@ func (l *Logger) Debug(v ...any) {
 
 func (l *Logger) Debugf(format string, v ...any) {
 	l.output(LevelDebug, fmt.Sprintf(format, v...))
+}
+
+func (l *Logger) Print(v ...any) {
+	l.output(levelNone, fmt.Sprint(v...))
+}
+
+func (l *Logger) Printf(format string, v ...any) {
+	l.output(levelNone, fmt.Sprintf(format, v...))
+}
+
+func (l *Logger) Println(v ...any) {
+	l.output(levelNone, fmt.Sprintln(v...))
 }
