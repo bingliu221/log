@@ -3,6 +3,7 @@ package log
 import (
 	"fmt"
 	"io"
+	"math"
 	"runtime"
 	"strconv"
 	"strings"
@@ -38,12 +39,12 @@ type Level int
 
 // LogLevels
 const (
+	levelNone Level = math.MinInt
+
 	LevelError   Level = -2
 	LevelWarning Level = -1
 	LevelInfo    Level = 0 // default log level
 	LevelDebug   Level = 1
-
-	levelNone Level = 1 << 31 // no log level
 )
 
 var levelString = map[Level]string{
